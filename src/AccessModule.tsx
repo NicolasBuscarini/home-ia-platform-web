@@ -1,4 +1,4 @@
-import { useI18n } from 'home-ia-shared';
+import { ModulePage, ModuleTabs, useI18n } from 'home-ia-shared';
 import { useState } from 'react';
 import { AdminAccessRequestsPanel } from './features/access/AdminAccessRequestsPanel';
 import { AdminProfilesPanel } from './features/access/AdminProfilesPanel';
@@ -40,39 +40,27 @@ export default function AccessModule({ userRole, portalModuleIds }: AccessModule
   ];
 
   return (
-    <section className="panel-card" aria-labelledby="platform-access-title">
-      <header className="clips-header">
-        <div>
-          <span className="eyebrow">{t('platform.access.eyebrow')}</span>
-          <h2 id="platform-access-title" className="h5 mt-2">
-            {t('platform.access.title')}
-          </h2>
-          <p className="small text-secondary mb-0">{t('platform.access.description')}</p>
-        </div>
-      </header>
+    <ModulePage
+      titleId="platform-access-title"
+      eyebrow={t('platform.access.eyebrow')}
+      title={t('platform.access.title')}
+      description={t('platform.access.description')}
+    >
+      <ModuleTabs
+        label={t('platform.access.tabs.label')}
+        items={tabs.map((tab) => ({
+          ...tab,
+          panelId: `access-view-${tab.id}`,
+        }))}
+        active={view}
+        onChange={setView}
+      />
 
-      <div className="nav nav-tabs mb-3" role="tablist" aria-label={t('platform.access.tabs.label')}>
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            id={`access-tab-${tab.id}`}
-            className={`nav-link ${view === tab.id ? 'active' : ''}`}
-            type="button"
-            role="tab"
-            aria-selected={view === tab.id}
-            aria-controls={`access-view-${tab.id}`}
-            onClick={() => setView(tab.id)}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
-      <div id={`access-view-${view}`} role="tabpanel" aria-labelledby={`access-tab-${view}`}>
+      <div id={`access-view-${view}`} role="tabpanel" aria-labelledby={`module-tab-${view}`}>
         {view === 'users' && <AdminUsersPanel initialUserId={userIdFilter} />}
         {view === 'profiles' && <AdminProfilesPanel />}
         {view === 'requests' && <AdminAccessRequestsPanel onManageUser={manageUser} />}
       </div>
-    </section>
+    </ModulePage>
   );
 }

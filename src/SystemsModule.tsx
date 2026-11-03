@@ -1,4 +1,4 @@
-import { ApiError, getJson, request, useI18n } from 'home-ia-shared';
+import { ApiError, getJson, ModulePage, request, useI18n } from 'home-ia-shared';
 import { useCallback, useEffect, useState } from 'react';
 import PlatformSettingsPanel from './features/settings/PlatformSettingsPanel';
 
@@ -119,27 +119,22 @@ export default function SystemsModule({ userRole, portalModuleIds }: SystemsModu
   }
 
   return (
-    <section className="panel-card" aria-labelledby="platform-systems-title">
-      <header className="clips-header">
-        <div>
-          <span className="eyebrow">{t('platform.systems.eyebrow')}</span>
-          <h2 id="platform-systems-title" className="h5 mt-2">
-            {t('platform.systems.title')}
-          </h2>
-          <p className="small text-secondary mb-0">{t('platform.systems.description')}</p>
-        </div>
-        <div className="clips-header-actions">
-          <button
-            className="btn btn-outline-secondary btn-sm"
-            type="button"
-            disabled={loading || Boolean(busyId)}
-            onClick={() => void load()}
-          >
-            {t('platform.systems.refresh')}
-          </button>
-        </div>
-      </header>
-
+    <ModulePage
+      titleId="platform-systems-title"
+      eyebrow={t('platform.systems.eyebrow')}
+      title={t('platform.systems.title')}
+      description={t('platform.systems.description')}
+      actions={
+        <button
+          className="btn btn-outline-secondary btn-sm"
+          type="button"
+          disabled={loading || Boolean(busyId)}
+          onClick={() => void load()}
+        >
+          {t('platform.systems.refresh')}
+        </button>
+      }
+    >
       {error && (
         <div className="error-text" role="alert">
           <p>{error}</p>
@@ -168,7 +163,7 @@ export default function SystemsModule({ userRole, portalModuleIds }: SystemsModu
       )}
 
       {page && page.items.length > 0 && (
-        <div className="table-responsive">
+        <div className="module-section table-responsive">
           <table className="table align-middle">
             <caption className="visually-hidden">{t('platform.systems.tableCaption')}</caption>
             <thead>
@@ -224,6 +219,6 @@ export default function SystemsModule({ userRole, portalModuleIds }: SystemsModu
         </div>
       )}
       <PlatformSettingsPanel />
-    </section>
+    </ModulePage>
   );
 }
