@@ -10,11 +10,27 @@ export interface AccessModuleProps {
   locale?: string;
   userRole?: string;
   portalModuleIds?: string[];
+  activeView?: string;
+  onViewChange?: (view: string) => void;
 }
 
-export default function AccessModule({ userRole, portalModuleIds }: AccessModuleProps) {
+export default function AccessModule({
+  userRole,
+  portalModuleIds,
+  activeView,
+  onViewChange,
+}: AccessModuleProps) {
   const { t } = useI18n();
-  const [view, setView] = useState<AccessView>('users');
+  const [internalView, setInternalView] = useState<AccessView>('users');
+  const controlled = activeView !== undefined;
+  const view: AccessView =
+    activeView === 'users' || activeView === 'profiles' || activeView === 'requests'
+      ? activeView
+      : internalView;
+  const setView = (next: AccessView) => {
+    setInternalView(next);
+    onViewChange?.(next);
+  };
   const [userIdFilter, setUserIdFilter] = useState<string>();
 
   const isAdministrator = userRole === 'Administrator';
@@ -46,21 +62,26 @@ export default function AccessModule({ userRole, portalModuleIds }: AccessModule
       title={t('platform.access.title')}
       description={t('platform.access.description')}
     >
-      <ModuleTabs
-        label={t('platform.access.tabs.label')}
-        items={tabs.map((tab) => ({
-          ...tab,
-          panelId: `access-view-${tab.id}`,
-        }))}
-        active={view}
-        onChange={setView}
-      />
+      {!controlled && (
+        <ModuleTabs
+          label={t('platform.access.tabs.label')}
+          items={tabs.map((tab) => ({
+            ...tab,
+            panelId: `access-view-${tab.id}`,
+          }))}
+          active={view}
+          onChange={setView}
+        />
+      )}
 
-      <div id={`access-view-${view}`} role="tabpanel" aria-labelledby={`module-tab-${view}`}>
+      <section
+        id={`access-view-${view}`}
+        aria-labelledby={controlled ? `module-subnav-access-${view}` : `module-tab-${view}`}
+      >
         {view === 'users' && <AdminUsersPanel initialUserId={userIdFilter} />}
         {view === 'profiles' && <AdminProfilesPanel />}
         {view === 'requests' && <AdminAccessRequestsPanel onManageUser={manageUser} />}
-      </div>
+      </section>
     </ModulePage>
   );
 }

@@ -41,6 +41,16 @@ describe('SystemsModule', () => {
       if (method === 'GET' && path === '/api/v1/admin/portal-modules?page=1&pageSize=100') {
         return json({ items: [moduleItem], page: 1, pageSize: 100, totalCount: 1 });
       }
+      if (method === 'GET' && path === '/api/v1/admin/integrations/activitywatch/credential') {
+        return json({
+          integrationId: 'activitywatch',
+          configured: false,
+          source: 'none',
+          keyVersion: null,
+          updatedAtUtc: null,
+          version: 0,
+        });
+      }
       if (method === 'PUT' && path === '/api/v1/admin/portal-modules/monitoring') {
         return json({ ...moduleItem, isEnabled: false, version: 2, updatedAtUtc: '2026-10-02T00:00:00Z' });
       }

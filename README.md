@@ -5,7 +5,7 @@ Remote de Module Federation para os módulos administrativos genéricos do porta
 Expõe:
 
 - `./AccessModule`: gestão de usuários, perfis/permissões e solicitações de acesso.
-- `./SystemsModule`: catálogo de módulos registrados no portal, com contrato, menu, permissão exigida e ativação.
+- `./SystemsModule`: catálogo de módulos registrados no portal, com contrato, menu, permissão exigida e ativação, além da saúde agregada do portal, dos módulos e das integrações.
 
 O shell `home-ia-web` é dono de sessão, autenticação, autorização, navegação principal, tema, idioma e CSS global. Este remote apenas apresenta dados e envia comandos autorizados; não autentica, não decide autorização e não acessa segredos.
 
@@ -20,7 +20,7 @@ O projeto é operado exclusivamente pelo entrypoint raiz:
 ./garage lock-platform-web
 ```
 
-O Vite de desenvolvimento usa a porta `5175` e o build estático é servido pelo portal em `/platform/`. Pessoas e câmeras continuam no remote `home-ia-monitoring-web`; operações de captura, saúde e dependências do monitoramento também permanecem lá.
+O Vite de desenvolvimento usa a porta `5175` e o build estático é servido pelo portal em `/platform/`. Pessoas e câmeras continuam no remote `home-ia-monitoring-web`; operações de captura e a saúde operacional/dependências do Monitoramento também permanecem lá. Este remote mostra somente o agregado do portal/módulos/integrações (`GET /api/v1/portal/health`), sem URLs, segredos ou payloads.
 
 ## Verificação
 

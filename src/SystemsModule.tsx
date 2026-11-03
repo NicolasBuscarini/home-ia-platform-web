@@ -1,5 +1,7 @@
 import { ApiError, getJson, ModulePage, request, useI18n } from 'home-ia-shared';
 import { useCallback, useEffect, useState } from 'react';
+import HealthPanel from './features/settings/HealthPanel';
+import IntegrationCredentialPanel from './features/settings/IntegrationCredentialPanel';
 import PlatformSettingsPanel from './features/settings/PlatformSettingsPanel';
 
 interface PortalModule {
@@ -218,7 +220,9 @@ export default function SystemsModule({ userRole, portalModuleIds }: SystemsModu
           </table>
         </div>
       )}
+      <IntegrationCredentialPanel />
       <PlatformSettingsPanel />
+      <HealthPanel />
     </ModulePage>
   );
 }

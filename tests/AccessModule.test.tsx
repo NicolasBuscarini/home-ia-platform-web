@@ -66,6 +66,29 @@ describe('AccessModule', () => {
     );
   });
 
+  it('uses the controlled view from the shell without duplicating tabs', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const path = String(input);
+      const method = init?.method ?? 'GET';
+      if (method === 'GET' && path.startsWith('/api/v1/admin/access-requests?')) {
+        return json({ items: [], page: 1, pageSize: 25, totalCount: 0 });
+      }
+      if (method === 'GET' && path === '/api/v1/admin/access-rules') {
+        return json([]);
+      }
+      throw new Error(`Unexpected request: ${method} ${path}`);
+    });
+
+    render(
+      <I18nProvider>
+        <AccessModule userRole="Administrator" activeView="requests" />
+      </I18nProvider>,
+    );
+
+    expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Pedidos de acesso' })).toBeInTheDocument();
+  });
+
   it('denies access management to non-administrators', () => {
     render(
       <I18nProvider>
