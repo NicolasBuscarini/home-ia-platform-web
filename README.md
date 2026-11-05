@@ -4,7 +4,7 @@ Remote de Module Federation para os módulos administrativos genéricos do porta
 
 Expõe:
 
-- `./AccessModule`: gestão de usuários, perfis/permissões e solicitações de acesso.
+- `./AccessModule`: gestão de usuários, perfis/permissões e solicitações de acesso. O editor de perfis apresenta o catálogo v2 (módulo, risco, escopos permitidos, chaves reservadas/indisponíveis) e a atribuição de perfis aceita escopos `global`, `module`, `context` ou `camera`, limitados pela interseção das permissões do perfil.
 - `./SystemsModule`: catálogo de módulos registrados no portal, com contrato, menu, permissão exigida e ativação, além da saúde agregada do portal, dos módulos e das integrações.
 - `./AuditModule`: consulta da auditoria da plataforma (`GET /api/v1/admin/events` e detalhe), com filtros agrupados, tabela, cursor e verificação de integridade. É montado pelo shell na área de topo **Auditoria** quando a projeção do portal inclui o submenu `audit` (`events.read`); os textos vêm do catálogo compartilhado `audit.*` em `home-ia-shared`, sem cópia local.
 

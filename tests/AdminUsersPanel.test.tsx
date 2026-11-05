@@ -20,6 +20,30 @@ const camera = {
   name: 'Garagem',
   isEnabled: true,
 };
+const livePermission = {
+  key: 'live.video.view',
+  description: 'View live video',
+  module: 'monitoring',
+  category: 'read',
+  risk: 0,
+  allowedScopeKinds: [0, 1, 2, 3],
+  ownerOnly: false,
+  isAvailable: true,
+  unavailableReason: null,
+  isDelegable: true,
+};
+const activityPermission = {
+  key: 'activitywatch.read',
+  description: 'Read activity summaries',
+  module: 'activitywatch',
+  category: 'read',
+  risk: 0,
+  allowedScopeKinds: [0, 1],
+  ownerOnly: false,
+  isAvailable: true,
+  unavailableReason: null,
+  isDelegable: true,
+};
 
 function response(body: unknown, status = 200) {
   return new Response(status === 204 ? null : JSON.stringify(body), {
@@ -43,6 +67,7 @@ describe('administrative user management', () => {
         return response({ items: [account], page: 1, pageSize: 25, totalCount: 1 });
       if (path === '/api/v1/admin/cameras?page=1&pageSize=100') return response({ items: [camera] });
       if (path === '/api/v1/admin/access-rules') return response([profile]);
+      if (path === '/api/v1/admin/permission-catalog') return response([livePermission]);
       throw new Error(`Unexpected request: ${path}`);
     });
 
@@ -70,6 +95,7 @@ describe('administrative user management', () => {
         return response({ items: [account], page: 1, pageSize: 25, totalCount: 1 });
       if (path === '/api/v1/admin/cameras?page=1&pageSize=100') return response({ items: [camera] });
       if (path === '/api/v1/admin/access-rules') return response([profile]);
+      if (path === '/api/v1/admin/permission-catalog') return response([livePermission]);
       if (path === '/api/v1/admin/users/USR000000000001' && method === 'GET')
         return response({ ...account, isAdministrator: false, accessProfiles: savedAssignments });
       if (path === '/api/v1/admin/users/USR000000000001/access-rules' && method === 'PUT') {
@@ -98,7 +124,7 @@ describe('administrative user management', () => {
     expect(await screen.findByRole('heading', { name: 'Gestão de usuários' })).toBeInTheDocument();
     expect(screen.queryByText('Editor de perfil')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Detalhes' }));
-    await screen.findByRole('group', { name: 'Perfis atribuídos e escopo de câmera' });
+    await screen.findByRole('group', { name: 'Perfis atribuídos e escopos' });
     await user.click(screen.getByRole('checkbox', { name: 'Garage operator · v1' }));
     await user.click(screen.getByRole('checkbox', { name: /Garagem \(CTX000000000001 · CAM000000000001\)/ }));
     await user.click(screen.getByRole('button', { name: 'Salvar atribuições de perfil' }));
@@ -111,7 +137,7 @@ describe('administrative user management', () => {
           assignments: [
             {
               profileVersionPublicId: 'PVN000000000001',
-              scopes: [{ contextId: 'CTX000000000001', cameraId: 'CAM000000000001' }],
+              scopes: [{ kind: 'camera', contextId: 'CTX000000000001', cameraId: 'CAM000000000001' }],
             },
           ],
         }),
@@ -126,7 +152,7 @@ describe('administrative user management', () => {
     ).toBeInTheDocument();
   });
 
-  it('shows retryable sanitized load errors and does not call permission catalog or profile mutation', async () => {
+  it('shows retryable sanitized load errors and does not mutate assignments', async () => {
     const requests: string[] = [];
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       requests.push(String(input));
@@ -142,8 +168,9 @@ describe('administrative user management', () => {
     );
     expect(screen.getByRole('button', { name: 'Tentar novamente' })).toBeInTheDocument();
     expect(screen.queryByText('private-error-detail')).not.toBeInTheDocument();
-    expect(requests.some((path) => path.endsWith('/permission-catalog'))).toBe(false);
+    expect(requests.some((path) => path.endsWith('/permission-catalog'))).toBe(true);
     expect(requests.some((path) => path.endsWith('/access-rules') && !path.includes('?'))).toBe(true);
+    expect(requests.some((path) => path.endsWith('/access-rules') && path.includes('/users/'))).toBe(false);
   });
 
   it('keeps the account list visible when a camera-scope catalog is unavailable', async () => {
@@ -154,6 +181,7 @@ describe('administrative user management', () => {
       if (path === '/api/v1/admin/cameras?page=1&pageSize=100')
         return response({ error: 'unavailable' }, 503);
       if (path === '/api/v1/admin/access-rules') return response([profile]);
+      if (path === '/api/v1/admin/permission-catalog') return response([livePermission]);
       throw new Error(`Unexpected request: ${path}`);
     });
 
@@ -164,7 +192,7 @@ describe('administrative user management', () => {
     );
     expect(await screen.findByRole('heading', { name: 'local-user' })).toBeInTheDocument();
     expect(screen.getByRole('alert')).toHaveTextContent(
-      'As contas carregaram, mas não foi possível carregar perfis ou escopos de câmera.',
+      'As contas carregaram, mas não foi possível carregar perfis, câmeras ou o catálogo de permissões.',
     );
   });
 
@@ -180,6 +208,7 @@ describe('administrative user management', () => {
         });
       if (path === '/api/v1/admin/cameras?page=1&pageSize=100') return response({ items: [] });
       if (path === '/api/v1/admin/access-rules') return response([]);
+      if (path === '/api/v1/admin/permission-catalog') return response([]);
       throw new Error(`Unexpected request: ${path}`);
     });
 
@@ -205,5 +234,78 @@ describe('administrative user management', () => {
     await user.click(screen.getByRole('button', { name: 'Limpar filtro' }));
     expect(screen.getByRole('heading', { name: 'local-user' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'garage-operator' })).toBeInTheDocument();
+  });
+
+  it('offers only scope kinds accepted by every permission and sends module/global scopes explicitly', async () => {
+    const activityProfile = {
+      ...profile,
+      publicId: 'PRF000000000002',
+      currentVersionPublicId: 'PVN000000000002',
+      name: 'Activity reader',
+      permissionKeys: ['live.video.view', 'activitywatch.read'],
+    };
+    let savedAssignments: Array<Record<string, unknown>> = [];
+    const requests: Array<{ path: string; method: string; body?: string }> = [];
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const path = String(input);
+      const method = init?.method ?? 'GET';
+      const body = init?.body ? String(init.body) : undefined;
+      requests.push({ path, method, body });
+      if (path.startsWith('/api/v1/admin/users?page='))
+        return response({ items: [account], page: 1, pageSize: 25, totalCount: 1 });
+      if (path === '/api/v1/admin/cameras?page=1&pageSize=100') return response({ items: [camera] });
+      if (path === '/api/v1/admin/access-rules') return response([activityProfile]);
+      if (path === '/api/v1/admin/permission-catalog') return response([livePermission, activityPermission]);
+      if (path === '/api/v1/admin/users/USR000000000001' && method === 'GET')
+        return response({ ...account, isAdministrator: false, accessProfiles: savedAssignments });
+      if (path === '/api/v1/admin/users/USR000000000001/access-rules' && method === 'PUT') {
+        savedAssignments = [
+          {
+            assignmentPublicId: 'ASN000000000002',
+            profilePublicId: 'PRF000000000002',
+            profileVersionPublicId: 'PVN000000000002',
+            profileName: 'Activity reader',
+            profileVersion: 1,
+            scopes: [{ kind: 'global' }, { kind: 'module', moduleId: 'activitywatch' }],
+            assignedAtUtc: '2026-10-30T00:00:00Z',
+          },
+        ];
+        return response(undefined, 204);
+      }
+      throw new Error(`Unexpected request: ${method} ${path}`);
+    });
+
+    const user = userEvent.setup();
+    render(
+      <I18nProvider>
+        <AdminUsersPanel />
+      </I18nProvider>,
+    );
+    await user.click(await screen.findByRole('button', { name: 'Detalhes' }));
+    await user.click(await screen.findByRole('checkbox', { name: 'Activity reader · v1' }));
+
+    expect(screen.getByRole('group', { name: 'Global' })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Módulo' })).toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Contexto' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Câmera' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('checkbox', { name: 'Todos os contextos e módulos (global)' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Módulo: Atividade' }));
+    await user.click(screen.getByRole('button', { name: 'Salvar atribuições de perfil' }));
+
+    await waitFor(() =>
+      expect(requests).toContainEqual({
+        path: '/api/v1/admin/users/USR000000000001/access-rules',
+        method: 'PUT',
+        body: JSON.stringify({
+          assignments: [
+            {
+              profileVersionPublicId: 'PVN000000000002',
+              scopes: [{ kind: 'global' }, { kind: 'module', moduleId: 'activitywatch' }],
+            },
+          ],
+        }),
+      }),
+    );
   });
 });

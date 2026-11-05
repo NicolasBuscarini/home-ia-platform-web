@@ -1,10 +1,47 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { I18nProvider } from 'home-ia-shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AdminProfilesPanel } from '../src/features/access/AdminProfilesPanel';
 
-const permission = { key: 'live.video.view', description: 'View live video', isDelegable: true };
+const permission = {
+  key: 'live.video.view',
+  description: 'View live video',
+  module: 'monitoring',
+  category: 'read',
+  risk: 0,
+  allowedScopeKinds: [0, 1, 2, 3],
+  ownerOnly: false,
+  isAvailable: true,
+  unavailableReason: null,
+  isDelegable: true,
+};
+const restrictedPermissions = [
+  {
+    key: 'system.owner',
+    description: 'Portal ownership and owner management',
+    module: 'system',
+    category: 'owner',
+    risk: 3,
+    allowedScopeKinds: [0],
+    ownerOnly: true,
+    isAvailable: true,
+    unavailableReason: null,
+    isDelegable: false,
+  },
+  {
+    key: 'live.audio.listen',
+    description: 'Listen to live audio',
+    module: 'monitoring',
+    category: 'read',
+    risk: 1,
+    allowedScopeKinds: [0, 1, 2, 3],
+    ownerOnly: false,
+    isAvailable: false,
+    unavailableReason: 'Aguardando rendição somente vídeo no servidor.',
+    isDelegable: false,
+  },
+];
 
 function response(body: unknown, status = 200) {
   return new Response(status === 204 ? null : JSON.stringify(body), {
@@ -28,7 +65,8 @@ describe('administrative permission profile management', () => {
       const body = init?.body ? String(init.body) : undefined;
       requests.push({ path, method, body });
       if (path === '/api/v1/admin/access-rules' && method === 'GET') return response(profiles);
-      if (path === '/api/v1/admin/permission-catalog') return response([permission]);
+      if (path === '/api/v1/admin/permission-catalog')
+        return response([permission, ...restrictedPermissions]);
       if (path === '/api/v1/admin/access-rules' && method === 'POST') {
         profiles = [
           {
@@ -53,8 +91,19 @@ describe('administrative permission profile management', () => {
       </I18nProvider>,
     );
     expect(await screen.findByRole('heading', { name: 'Perfis e permissões' })).toBeInTheDocument();
-    expect(screen.getByRole('group', { name: /Vídeo ao vivo/ })).toBeInTheDocument();
-    expect(screen.getByText('Abrir o vídeo ao vivo das câmeras no escopo.')).toBeInTheDocument();
+    const monitoringGroup = screen.getByRole('group', { name: 'Monitoramento' });
+    expect(within(monitoringGroup).getByText('Ver vídeo ao vivo')).toBeInTheDocument();
+    expect(within(monitoringGroup).getByText('Risco baixo')).toBeInTheDocument();
+    expect(within(monitoringGroup).getByText('Escopos permitidos')).toBeInTheDocument();
+    for (const scope of ['Global', 'Módulo', 'Contexto', 'Câmera']) {
+      expect(within(monitoringGroup).getByText(scope)).toBeInTheDocument();
+    }
+    expect(
+      screen.getByRole('heading', { name: 'Permissões reservadas ou indisponíveis' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Exclusivo do owner')).toBeInTheDocument();
+    expect(screen.getByText('Indisponível')).toBeInTheDocument();
+    expect(screen.queryByRole('checkbox', { name: /system\.owner/ })).not.toBeInTheDocument();
     await user.type(screen.getByLabelText('Nome do perfil'), 'Garage operator');
     await user.click(screen.getByRole('checkbox', { name: /live\.video\.view/ }));
     await user.click(screen.getByRole('button', { name: 'Criar perfil' }));

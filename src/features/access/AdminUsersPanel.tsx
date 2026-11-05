@@ -1,5 +1,14 @@
 import { ApiError, getJson, request, useI18n } from 'home-ia-shared';
 import { useCallback, useEffect, useState } from 'react';
+import {
+  type CatalogPermission,
+  moduleLabel,
+  normalizeCatalogPermission,
+  type PermissionScopeKind,
+  type RawPermission,
+  SCOPE_KINDS,
+  scopeKindLabel,
+} from './permissionCatalog';
 
 type ErrorKind = 'load' | 'support' | 'save' | 'deactivate' | 'forbidden' | 'conflict' | 'session';
 interface UserSummary {
@@ -23,8 +32,10 @@ interface Profile {
   permissionKeys: string[];
 }
 interface Scope {
-  contextId: string;
-  cameraId: string;
+  kind?: string | number;
+  contextId?: string | null;
+  cameraId?: string | null;
+  moduleId?: string | null;
 }
 interface Assignment {
   assignmentPublicId: string;
@@ -44,11 +55,17 @@ interface Page {
   pageSize: number;
   totalCount: number;
 }
+interface DraftScope {
+  kind: PermissionScopeKind;
+  moduleId?: string;
+  contextId?: string;
+  cameraId?: string;
+}
 interface DraftAssignment {
   profileId: string;
   profileVersionId: string;
   profileVersion: number;
-  scopes: string[];
+  scopes: DraftScope[];
 }
 
 function errorKind(error: unknown, fallback: ErrorKind): ErrorKind {
@@ -56,6 +73,38 @@ function errorKind(error: unknown, fallback: ErrorKind): ErrorKind {
   if (error instanceof ApiError && error.status === 403) return 'forbidden';
   if (error instanceof ApiError && error.status === 409) return 'conflict';
   return fallback;
+}
+
+function parseScope(scope: Scope): DraftScope {
+  if (scope.moduleId) return { kind: 'module', moduleId: scope.moduleId };
+  if (scope.contextId && scope.cameraId)
+    return { kind: 'camera', contextId: scope.contextId, cameraId: scope.cameraId };
+  if (scope.contextId) return { kind: 'context', contextId: scope.contextId };
+  return { kind: 'global' };
+}
+
+function scopeId(scope: DraftScope): string {
+  return [scope.kind, scope.moduleId ?? '', scope.contextId ?? '', scope.cameraId ?? ''].join('|');
+}
+
+function toScopeBody(scope: DraftScope) {
+  if (scope.kind === 'global') return { kind: 'global' };
+  if (scope.kind === 'module') return { kind: 'module', moduleId: scope.moduleId };
+  if (scope.kind === 'context') return { kind: 'context', contextId: scope.contextId };
+  return { kind: 'camera', contextId: scope.contextId, cameraId: scope.cameraId };
+}
+
+function allowedScopeKinds(
+  profile: Profile,
+  catalog: Record<string, CatalogPermission>,
+): PermissionScopeKind[] {
+  const definitions = profile.permissionKeys
+    .map((key) => catalog[key])
+    .filter((definition): definition is CatalogPermission => definition !== undefined);
+  if (definitions.length === 0) return [...SCOPE_KINDS];
+  return SCOPE_KINDS.filter((kind) =>
+    definitions.every((definition) => definition.allowedScopeKinds.includes(kind)),
+  );
 }
 
 interface AdminUsersPanelProps {
@@ -67,6 +116,7 @@ export function AdminUsersPanel({ initialUserId }: AdminUsersPanelProps) {
   const [page, setPage] = useState<Page>();
   const [cameras, setCameras] = useState<Camera[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [catalog, setCatalog] = useState<Record<string, CatalogPermission>>({});
   const [pageNumber, setPageNumber] = useState(1);
   const [userIdFilter, setUserIdFilter] = useState(initialUserId);
   const [userNameFilter, setUserNameFilter] = useState('');
@@ -85,20 +135,33 @@ export function AdminUsersPanel({ initialUserId }: AdminUsersPanelProps) {
       setError('');
       setSupportReady(false);
       try {
-        const [usersResult, catalogResult, profilesResult] = await Promise.allSettled([
+        const [usersResult, catalogResult, profilesResult, permissionsResult] = await Promise.allSettled([
           getJson<Page>(
             `/api/v1/admin/users?page=${requestedPage}&pageSize=25${userIdFilter ? `&userId=${encodeURIComponent(userIdFilter)}` : ''}`,
             signal,
           ),
           getJson<{ items: Camera[] }>('/api/v1/admin/cameras?page=1&pageSize=100', signal),
           getJson<Profile[]>('/api/v1/admin/access-rules', signal),
+          getJson<RawPermission[]>('/api/v1/admin/permission-catalog', signal),
         ]);
         if (usersResult.status === 'rejected') throw usersResult.reason;
         setPage(usersResult.value);
-        const available = catalogResult.status === 'fulfilled' && profilesResult.status === 'fulfilled';
+        const available =
+          catalogResult.status === 'fulfilled' &&
+          profilesResult.status === 'fulfilled' &&
+          permissionsResult.status === 'fulfilled';
         setSupportReady(available);
         if (catalogResult.status === 'fulfilled') setCameras(catalogResult.value.items);
         if (profilesResult.status === 'fulfilled') setProfiles(profilesResult.value);
+        if (permissionsResult.status === 'fulfilled') {
+          setCatalog(
+            Object.fromEntries(
+              permissionsResult.value
+                .map(normalizeCatalogPermission)
+                .map((permission) => [permission.key, permission]),
+            ),
+          );
+        }
         if (!available && !signal?.aborted) setError('support');
       } catch (failure) {
         if (!signal?.aborted) setError(errorKind(failure, 'load'));
@@ -134,7 +197,7 @@ export function AdminUsersPanel({ initialUserId }: AdminUsersPanelProps) {
           profileId: item.profilePublicId,
           profileVersionId: item.profileVersionPublicId,
           profileVersion: item.profileVersion,
-          scopes: item.scopes.map((scope) => `${scope.contextId}\u0000${scope.cameraId}`),
+          scopes: item.scopes.map(parseScope),
         })),
       );
     } catch (failure) {
@@ -161,14 +224,17 @@ export function AdminUsersPanel({ initialUserId }: AdminUsersPanelProps) {
     );
   }
 
-  function toggleScope(profileVersionId: string, scopeId: string, selected: boolean) {
+  function toggleScope(profileVersionId: string, scope: DraftScope, selected: boolean) {
+    const id = scopeId(scope);
     setAssignments((current) =>
       current.map((item) =>
         item.profileVersionId !== profileVersionId
           ? item
           : {
               ...item,
-              scopes: selected ? [...item.scopes, scopeId] : item.scopes.filter((value) => value !== scopeId),
+              scopes: selected
+                ? [...item.scopes.filter((value) => scopeId(value) !== id), scope]
+                : item.scopes.filter((value) => scopeId(value) !== id),
             },
       ),
     );
@@ -185,10 +251,7 @@ export function AdminUsersPanel({ initialUserId }: AdminUsersPanelProps) {
         body: JSON.stringify({
           assignments: assignments.map((item) => ({
             profileVersionPublicId: item.profileVersionId,
-            scopes: item.scopes.map((value) => {
-              const [contextId, cameraId] = value.split('\u0000');
-              return { contextId, cameraId };
-            }),
+            scopes: item.scopes.map(toScopeBody),
           })),
         }),
       });
@@ -200,7 +263,7 @@ export function AdminUsersPanel({ initialUserId }: AdminUsersPanelProps) {
           profileId: item.profilePublicId,
           profileVersionId: item.profileVersionPublicId,
           profileVersion: item.profileVersion,
-          scopes: item.scopes.map((scope) => `${scope.contextId}\u0000${scope.cameraId}`),
+          scopes: item.scopes.map(parseScope),
         })),
       );
       setNotice(t('admin.users.notice.saved'));
@@ -234,6 +297,8 @@ export function AdminUsersPanel({ initialUserId }: AdminUsersPanelProps) {
   const normalizedQuery = userNameFilter.trim().toLocaleLowerCase();
   const visibleUsers =
     page?.items.filter((user) => user.userName.toLocaleLowerCase().includes(normalizedQuery)) ?? [];
+  const enabledCameras = cameras.filter((camera) => camera.isEnabled);
+  const contextIds = [...new Set(enabledCameras.map((camera) => camera.contextId))];
   return (
     <section className="panel-card admin-users-panel" aria-labelledby="admin-users-title">
       <div className="admin-users-heading">
@@ -379,6 +444,14 @@ export function AdminUsersPanel({ initialUserId }: AdminUsersPanelProps) {
                               .filter((profile) => profile.isActive)
                               .map((profile) => {
                                 const draft = assignments.find((item) => item.profileId === profile.publicId);
+                                const kinds = allowedScopeKinds(profile, catalog);
+                                const modules = [
+                                  ...new Set(
+                                    profile.permissionKeys
+                                      .map((key) => catalog[key]?.module)
+                                      .filter((module): module is string => module !== undefined),
+                                  ),
+                                ];
                                 return (
                                   <div className="admin-profile-assignment" key={profile.publicId}>
                                     <label className="form-check">
@@ -418,31 +491,124 @@ export function AdminUsersPanel({ initialUserId }: AdminUsersPanelProps) {
                                     {draft && (
                                       <fieldset className="admin-fieldset ms-3">
                                         <legend className="small">{t('admin.users.scopeForProfile')}</legend>
-                                        {cameras
-                                          .filter((camera) => camera.isEnabled)
-                                          .map((camera) => {
-                                            const scopeId = `${camera.contextId}\u0000${camera.cameraId}`;
-                                            return (
-                                              <label className="form-check" key={camera.cameraId}>
+                                        <p className="small text-secondary">
+                                          {t('admin.users.scopeKindsHint')}
+                                        </p>
+                                        {kinds.length === 0 && (
+                                          <p className="small text-secondary" role="status">
+                                            {t('admin.users.scope.noneAvailable')}
+                                          </p>
+                                        )}
+                                        {kinds.map((kind) => (
+                                          <fieldset className="admin-fieldset ms-3" key={kind}>
+                                            <legend className="small">{t(scopeKindLabel(kind))}</legend>
+                                            {kind === 'global' && (
+                                              <label className="form-check">
                                                 <input
                                                   className="form-check-input"
                                                   type="checkbox"
-                                                  checked={draft.scopes.includes(scopeId)}
+                                                  checked={draft.scopes.some(
+                                                    (scope) => scope.kind === 'global',
+                                                  )}
                                                   disabled={busy || !user.isActive}
                                                   onChange={(event) =>
                                                     toggleScope(
                                                       draft.profileVersionId,
-                                                      scopeId,
+                                                      { kind: 'global' },
                                                       event.target.checked,
                                                     )
                                                   }
                                                 />
                                                 <span className="form-check-label">
-                                                  {camera.name} ({camera.contextId} · {camera.cameraId})
+                                                  {t('admin.users.scope.globalOption')}
                                                 </span>
                                               </label>
-                                            );
-                                          })}
+                                            )}
+                                            {kind === 'module' &&
+                                              modules.map((module) => (
+                                                <label className="form-check" key={module}>
+                                                  <input
+                                                    className="form-check-input"
+                                                    type="checkbox"
+                                                    checked={draft.scopes.some(
+                                                      (scope) =>
+                                                        scope.kind === 'module' && scope.moduleId === module,
+                                                    )}
+                                                    disabled={busy || !user.isActive}
+                                                    onChange={(event) =>
+                                                      toggleScope(
+                                                        draft.profileVersionId,
+                                                        { kind: 'module', moduleId: module },
+                                                        event.target.checked,
+                                                      )
+                                                    }
+                                                  />
+                                                  <span className="form-check-label">
+                                                    {t('admin.users.scope.moduleOption', {
+                                                      module: t(moduleLabel(module)),
+                                                    })}
+                                                  </span>
+                                                </label>
+                                              ))}
+                                            {kind === 'context' &&
+                                              contextIds.map((contextId) => (
+                                                <label className="form-check" key={contextId}>
+                                                  <input
+                                                    className="form-check-input"
+                                                    type="checkbox"
+                                                    checked={draft.scopes.some(
+                                                      (scope) =>
+                                                        scope.kind === 'context' &&
+                                                        scope.contextId === contextId,
+                                                    )}
+                                                    disabled={busy || !user.isActive}
+                                                    onChange={(event) =>
+                                                      toggleScope(
+                                                        draft.profileVersionId,
+                                                        { kind: 'context', contextId },
+                                                        event.target.checked,
+                                                      )
+                                                    }
+                                                  />
+                                                  <span className="form-check-label">
+                                                    {t('admin.users.scope.contextOption', {
+                                                      context: contextId,
+                                                    })}
+                                                  </span>
+                                                </label>
+                                              ))}
+                                            {kind === 'camera' &&
+                                              enabledCameras.map((camera) => {
+                                                const scope: DraftScope = {
+                                                  kind: 'camera',
+                                                  contextId: camera.contextId,
+                                                  cameraId: camera.cameraId,
+                                                };
+                                                return (
+                                                  <label className="form-check" key={camera.cameraId}>
+                                                    <input
+                                                      className="form-check-input"
+                                                      type="checkbox"
+                                                      checked={draft.scopes.some(
+                                                        (value) => scopeId(value) === scopeId(scope),
+                                                      )}
+                                                      disabled={busy || !user.isActive}
+                                                      onChange={(event) =>
+                                                        toggleScope(
+                                                          draft.profileVersionId,
+                                                          scope,
+                                                          event.target.checked,
+                                                        )
+                                                      }
+                                                    />
+                                                    <span className="form-check-label">
+                                                      {camera.name} ({camera.contextId} · {camera.cameraId})
+                                                    </span>
+                                                  </label>
+                                                );
+                                              })}
+                                          </fieldset>
+                                        ))}
                                       </fieldset>
                                     )}
                                   </div>

@@ -1,6 +1,16 @@
 import { ApiError, getJson, request, useI18n } from 'home-ia-shared';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { PERMISSION_GROUPS, permissionDescription, permissionName } from './permissionCatalog';
+import {
+  type CatalogPermission,
+  moduleLabel,
+  normalizeCatalogPermission,
+  orderedModules,
+  permissionDescription,
+  permissionName,
+  type RawPermission,
+  riskLabel,
+  scopeKindLabel,
+} from './permissionCatalog';
 
 interface Profile {
   publicId: string;
@@ -10,12 +20,6 @@ interface Profile {
   version: number;
   updatedAtUtc: string;
   permissionKeys: string[];
-}
-
-interface Permission {
-  key: string;
-  description: string;
-  isDelegable: boolean;
 }
 
 type ErrorKind = 'load' | 'permissions' | 'save' | 'forbidden' | 'conflict' | 'session';
@@ -30,7 +34,7 @@ function errorKind(error: unknown, fallback: ErrorKind): ErrorKind {
 export function AdminProfilesPanel() {
   const { t } = useI18n();
   const [profiles, setProfiles] = useState<Profile[]>([]);
-  const [permissions, setPermissions] = useState<Permission[]>([]);
+  const [permissions, setPermissions] = useState<CatalogPermission[]>([]);
   const [profileName, setProfileName] = useState('');
   const [editingProfileId, setEditingProfileId] = useState('');
   const [permissionKeys, setPermissionKeys] = useState<string[]>([]);
@@ -45,12 +49,12 @@ export function AdminProfilesPanel() {
     try {
       const [profilesResult, permissionsResult] = await Promise.allSettled([
         getJson<Profile[]>('/api/v1/admin/access-rules', signal),
-        getJson<Permission[]>('/api/v1/admin/permission-catalog', signal),
+        getJson<RawPermission[]>('/api/v1/admin/permission-catalog', signal),
       ]);
       if (profilesResult.status === 'rejected') throw profilesResult.reason;
       setProfiles(profilesResult.value);
       if (permissionsResult.status === 'fulfilled') {
-        setPermissions(permissionsResult.value.filter((permission) => permission.isDelegable));
+        setPermissions(permissionsResult.value.map(normalizeCatalogPermission));
       } else {
         setPermissions([]);
         if (!signal?.aborted) setError('permissions');
@@ -100,33 +104,36 @@ export function AdminProfilesPanel() {
 
   const editing = profiles.find((profile) => profile.publicId === editingProfileId);
 
+  const selectable = useMemo(() => permissions.filter((permission) => permission.isDelegable), [permissions]);
+  const restricted = useMemo(
+    () => permissions.filter((permission) => !permission.isDelegable),
+    [permissions],
+  );
   const groupedPermissions = useMemo(() => {
-    const assigned = new Set<string>();
-    const groups = PERMISSION_GROUPS.map((group) => {
-      const items = permissions.filter((permission) => group.keys.includes(permission.key));
-      for (const item of items) assigned.add(item.key);
-      return { ...group, items };
-    }).filter((group) => group.items.length > 0);
-    const remaining = permissions.filter((permission) => !assigned.has(permission.key));
-    if (remaining.length > 0) {
-      groups.push({
-        id: 'other',
-        label: 'admin.profiles.group.other',
-        keys: [],
-        items: remaining,
-      });
+    const groups = new Map<string, CatalogPermission[]>();
+    for (const permission of selectable) {
+      const items = groups.get(permission.module) ?? [];
+      items.push(permission);
+      groups.set(permission.module, items);
     }
-    return groups;
-  }, [permissions]);
+    return orderedModules(groups.keys()).map((module) => ({
+      module,
+      items: groups.get(module) ?? [],
+    }));
+  }, [selectable]);
+  const unknownKeys = useMemo(
+    () => permissionKeys.filter((key) => !permissions.some((permission) => permission.key === key)),
+    [permissionKeys, permissions],
+  );
 
-  function permissionLabel(key: string, fallback: string) {
-    const name = permissionName(key);
-    return name ? t(name) : fallback;
+  function permissionLabel(permission: CatalogPermission) {
+    const name = permissionName(permission.key);
+    return name ? t(name) : permission.description;
   }
 
-  function permissionHelp(key: string, fallback: string) {
-    const description = permissionDescription(key);
-    return description ? t(description) : fallback;
+  function permissionHelp(permission: CatalogPermission) {
+    const description = permissionDescription(permission.key);
+    return description ? t(description) : permission.description;
   }
 
   return (
@@ -209,12 +216,18 @@ export function AdminProfilesPanel() {
             {t('admin.profiles.versionNotice', { version: editing.version })}
           </p>
         )}
+        {unknownKeys.length > 0 && (
+          <p className="small text-secondary mb-0" role="status">
+            {t('admin.profiles.unknownKeys', { count: unknownKeys.length })}{' '}
+            <code>{unknownKeys.join(', ')}</code>
+          </p>
+        )}
 
         <div className="profile-selection-summary">
           <p className="small text-secondary mb-0" role="status" aria-live="polite">
             {t('admin.profiles.selectedCount', {
               selected: permissionKeys.length,
-              total: permissions.length,
+              total: selectable.length,
             })}
           </p>
           {permissionKeys.length > 0 && (
@@ -238,9 +251,9 @@ export function AdminProfilesPanel() {
               permissionKeys.includes(permission.key),
             ).length;
             return (
-              <fieldset className="permission-group" key={group.id}>
+              <fieldset className="permission-group" key={group.module}>
                 <legend>
-                  <span>{t(group.label)}</span>
+                  <span>{t(moduleLabel(group.module))}</span>
                   <span className="permission-group-count" aria-hidden="true">
                     {selectedInGroup}/{group.items.length}
                   </span>
@@ -267,8 +280,17 @@ export function AdminProfilesPanel() {
                           }
                         />
                         <span className="permission-option-copy">
-                          <strong>{permissionLabel(permission.key, permission.description)}</strong>
-                          <span>{permissionHelp(permission.key, permission.description)}</span>
+                          <strong>{permissionLabel(permission)}</strong>
+                          <span>{permissionHelp(permission)}</span>
+                          <span className="permission-option-meta">
+                            <span className="permission-badge">{t(riskLabel(permission.risk))}</span>
+                            <span className="permission-badge">{t('admin.profiles.scopeKinds')}</span>
+                            {permission.allowedScopeKinds.map((kind) => (
+                              <span className="permission-badge" key={kind}>
+                                {t(scopeKindLabel(kind))}
+                              </span>
+                            ))}
+                          </span>
                           <code>{permission.key}</code>
                         </span>
                       </label>
@@ -279,6 +301,26 @@ export function AdminProfilesPanel() {
             );
           })}
         </div>
+
+        {restricted.length > 0 && (
+          <section className="mt-2" aria-labelledby="admin-profiles-restricted-title">
+            <h3 id="admin-profiles-restricted-title" className="h6 mb-1">
+              {t('admin.profiles.restrictedTitle')}
+            </h3>
+            <p className="small text-secondary mb-2">{t('admin.profiles.restrictedHelp')}</p>
+            <ul className="profile-permission-tags">
+              {restricted.map((permission) => (
+                <li className="permission-tag" key={permission.key}>
+                  <span>{permissionLabel(permission)}</span>
+                  <span className="permission-badge">
+                    {permission.ownerOnly ? t('admin.profiles.ownerOnly') : t('admin.profiles.unavailable')}
+                  </span>
+                  <code>{permission.key}</code>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
 
         <div className="profile-editor-actions">
           <button
@@ -345,12 +387,15 @@ export function AdminProfilesPanel() {
               <p className="small text-secondary mb-1 mt-3">{t('admin.profiles.permissions')}</p>
               {profile.permissionKeys.length > 0 ? (
                 <ul className="profile-permission-tags">
-                  {profile.permissionKeys.map((key) => (
-                    <li className="permission-tag" key={key}>
-                      <span>{permissionLabel(key, key)}</span>
-                      <code>{key}</code>
-                    </li>
-                  ))}
+                  {profile.permissionKeys.map((key) => {
+                    const name = permissionName(key);
+                    return (
+                      <li className="permission-tag" key={key}>
+                        <span>{name ? t(name) : key}</span>
+                        <code>{key}</code>
+                      </li>
+                    );
+                  })}
                 </ul>
               ) : (
                 <p className="small text-secondary mb-0">{t('admin.profiles.noPermissions')}</p>
