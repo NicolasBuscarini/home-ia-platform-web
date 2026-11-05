@@ -167,8 +167,8 @@ function formatDate(value: string, locale: string): string {
 }
 
 export default function AuditModule({ userRole, portalModuleIds }: AuditModuleProps) {
-  const { locale } = useI18n();
-  const copy = useMemo(() => auditCopy(locale), [locale]);
+  const { locale, t } = useI18n();
+  const copy = useMemo(() => auditCopy(t), [t]);
   const [draft, setDraft] = useState<Filters>(emptyFilters);
   const [applied, setApplied] = useState<Filters>(emptyFilters);
   const [items, setItems] = useState<EventListItem[]>([]);
