@@ -18,6 +18,7 @@ export default defineConfig(({ command, mode }) => {
         exposes: {
           './AccessModule': './src/AccessModule.tsx',
           './SystemsModule': './src/SystemsModule.tsx',
+          './AuditModule': './src/AuditModule.tsx',
         },
         shared: ['react', 'react-dom', 'home-ia-shared'],
         dts: false,

@@ -14,5 +14,8 @@ export default defineConfig({
     setupFiles: ['./tests/setup.ts'],
     restoreMocks: true,
     clearMocks: true,
+    // The Compose verify runner has a small memory budget; one worker keeps jsdom
+    // deterministic and avoids fork startup timeouts on constrained hosts.
+    maxWorkers: 1,
   },
 });

@@ -6,6 +6,7 @@ Expõe:
 
 - `./AccessModule`: gestão de usuários, perfis/permissões e solicitações de acesso.
 - `./SystemsModule`: catálogo de módulos registrados no portal, com contrato, menu, permissão exigida e ativação, além da saúde agregada do portal, dos módulos e das integrações.
+- `./AuditModule`: consulta da auditoria da plataforma (`GET /api/v1/admin/events` e detalhe), com filtros agrupados, tabela, cursor e verificação de integridade. A navegação/submenu `audit` com `events.read` e as chaves de i18n no `home-ia-shared` ainda não foram ligadas; esta fatia entrega o remote e seus testes.
 
 O shell `home-ia-web` é dono de sessão, autenticação, autorização, navegação principal, tema, idioma e CSS global. Este remote apenas apresenta dados e envia comandos autorizados; não autentica, não decide autorização e não acessa segredos.
 
