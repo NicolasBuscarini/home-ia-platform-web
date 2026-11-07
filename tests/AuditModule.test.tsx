@@ -59,6 +59,7 @@ const detail = {
     },
   },
   actorPublicId: firstItem.actorPublicId,
+  actorUsername: 'admin',
   subjectPublicId: null,
   integrityValid: true,
   metadata: { policyVersion: 3 },
@@ -98,15 +99,17 @@ describe('AuditModule', () => {
     renderModule();
 
     expect(await screen.findByText('camera.connection.address.updated')).toBeInTheDocument();
+    expect(screen.getByText('admin')).toBeInTheDocument();
     expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/v1/admin/events?pageSize=50');
 
     await user.type(screen.getByLabelText('Tipo de evento'), 'camera.connection.address.updated');
     await user.selectOptions(screen.getByLabelText('Resultado'), 'success');
+    await user.type(screen.getByLabelText('Excluir usuários'), 'root, audit');
     await user.click(screen.getByRole('button', { name: 'Aplicar filtros' }));
 
     await waitFor(() =>
       expect(fetchMock.mock.calls.at(-1)?.[0]).toBe(
-        '/api/v1/admin/events?eventType=camera.connection.address.updated&outcome=success&pageSize=50',
+        '/api/v1/admin/events?eventType=camera.connection.address.updated&outcome=success&excludeActor=root&excludeActor=audit&pageSize=50',
       ),
     );
 
@@ -114,7 +117,7 @@ describe('AuditModule', () => {
 
     expect(await screen.findByText('event_store.queried')).toBeInTheDocument();
     expect(fetchMock.mock.calls.at(-1)?.[0]).toBe(
-      '/api/v1/admin/events?eventType=camera.connection.address.updated&outcome=success&pageSize=50&cursor=cursor-1',
+      '/api/v1/admin/events?eventType=camera.connection.address.updated&outcome=success&excludeActor=root&excludeActor=audit&pageSize=50&cursor=cursor-1',
     );
     expect(screen.queryByRole('button', { name: 'Carregar mais' })).not.toBeInTheDocument();
   });
@@ -137,6 +140,7 @@ describe('AuditModule', () => {
     await user.click(trigger);
 
     expect(await screen.findByText(/Hash confere/)).toBeInTheDocument();
+    expect(screen.getAllByText('admin').length).toBeGreaterThan(0);
     expect(screen.getByText(/policyVersion/)).toBeInTheDocument();
     expect(screen.getByText('0HN7G5A2B3C4D:00000001')).toBeInTheDocument();
 

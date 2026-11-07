@@ -23,6 +23,8 @@ const auditKeys = {
   severity: 'audit.severity',
   source: 'audit.source',
   actor: 'audit.actor',
+  excludeActors: 'audit.excludeActors',
+  excludeActorsHint: 'audit.excludeActorsHint',
   correlation: 'audit.correlation',
   resourceType: 'audit.resourceType',
   resourceId: 'audit.resourceId',

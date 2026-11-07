@@ -61,6 +61,7 @@ interface EventDetail {
     event: EventEnvelope;
   };
   actorPublicId: string | null;
+  actorUsername: string | null;
   subjectPublicId: string | null;
   integrityValid: boolean;
   metadata: Record<string, unknown> | null;
@@ -74,6 +75,7 @@ interface Filters {
   outcome: string;
   source: string;
   actor: string;
+  excludeActors: string;
   correlationId: string;
   resourceType: string;
   resourceId: string;
@@ -91,6 +93,7 @@ const emptyFilters: Filters = {
   outcome: '',
   source: '',
   actor: '',
+  excludeActors: '',
   correlationId: '',
   resourceType: '',
   resourceId: '',
@@ -147,6 +150,12 @@ function queryString(filters: Filters, cursor?: string | null): string {
   ];
   for (const [key, value] of values) {
     if (value) params.set(key, value);
+  }
+  for (const actor of filters.excludeActors
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean)) {
+    params.append('excludeActor', actor);
   }
   params.set('pageSize', '50');
   if (cursor) params.set('cursor', cursor);
@@ -358,6 +367,22 @@ export default function AuditModule({ userRole, portalModuleIds }: AuditModulePr
           <legend className="h6">{copy.context}</legend>
           <div className="row g-3">
             {field(copy.actor, 'actor', 'audit-actor')}
+            <div className="col-md-4">
+              <label className="form-label" htmlFor="audit-exclude-actors">
+                {copy.excludeActors}
+              </label>
+              <input
+                className="form-control"
+                id="audit-exclude-actors"
+                value={draft.excludeActors}
+                placeholder={copy.excludeActorsHint}
+                aria-describedby="audit-exclude-actors-hint"
+                onChange={(event) => setDraft({ ...draft, excludeActors: event.target.value })}
+              />
+              <div className="form-text" id="audit-exclude-actors-hint">
+                {copy.excludeActorsHint}
+              </div>
+            </div>
             {field(copy.correlation, 'correlationId', 'audit-correlation')}
             {field(copy.resourceType, 'resourceType', 'audit-resource-type')}
             {field(copy.resourceId, 'resourceId', 'audit-resource-id')}
@@ -458,7 +483,18 @@ export default function AuditModule({ userRole, portalModuleIds }: AuditModulePr
                     <span className={`badge ${outcomeClass(item.outcome)}`}>{item.outcome}</span>
                   </td>
                   <td>{item.source}</td>
-                  <td>{item.actorPublicId ?? item.actorUsername ?? copy.none}</td>
+                  <td>
+                    {item.actorUsername || item.actorPublicId ? (
+                      <>
+                        <span className="d-block">{item.actorUsername ?? copy.none}</span>
+                        {item.actorPublicId && (
+                          <span className="small text-secondary">{item.actorPublicId}</span>
+                        )}
+                      </>
+                    ) : (
+                      copy.none
+                    )}
+                  </td>
                   <td>
                     {item.resourceType && item.resourceId
                       ? `${item.resourceType}/${item.resourceId}`
@@ -563,7 +599,21 @@ function EventDetailView({
         <DetailRow label={copy.sourceVersion}>{event.sourceVersion ?? copy.none}</DetailRow>
         <DetailRow label={copy.emitter}>{event.emitter}</DetailRow>
         <DetailRow label={copy.actorColumn}>
-          {detail.actorPublicId ?? event.actor?.userPublicId ?? event.actor?.username ?? copy.none}
+          {detail.actorUsername ||
+          event.actor?.username ||
+          detail.actorPublicId ||
+          event.actor?.userPublicId ? (
+            <>
+              <span className="d-block">{detail.actorUsername ?? event.actor?.username ?? copy.none}</span>
+              {(detail.actorPublicId ?? event.actor?.userPublicId) && (
+                <span className="small text-secondary">
+                  {detail.actorPublicId ?? event.actor?.userPublicId}
+                </span>
+              )}
+            </>
+          ) : (
+            copy.none
+          )}
         </DetailRow>
         <DetailRow label={copy.subject}>
           {event.subject ? `${event.subject.type}/${event.subject.publicId}` : copy.none}
