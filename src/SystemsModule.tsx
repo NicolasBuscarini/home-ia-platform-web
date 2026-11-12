@@ -1,5 +1,6 @@
 import { ApiError, getJson, ModulePage, request, useI18n } from 'home-ia-shared';
 import { useCallback, useEffect, useState } from 'react';
+import BackupSummaryPanel from './features/settings/BackupSummaryPanel';
 import HealthPanel from './features/settings/HealthPanel';
 import IntegrationCredentialPanel from './features/settings/IntegrationCredentialPanel';
 import PlatformSettingsPanel from './features/settings/PlatformSettingsPanel';
@@ -223,6 +224,7 @@ export default function SystemsModule({ userRole, portalModuleIds }: SystemsModu
       <IntegrationCredentialPanel />
       <PlatformSettingsPanel />
       <HealthPanel />
+      <BackupSummaryPanel />
     </ModulePage>
   );
 }

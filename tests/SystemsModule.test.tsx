@@ -51,6 +51,20 @@ describe('SystemsModule', () => {
           version: 0,
         });
       }
+      if (method === 'GET' && path === '/api/v1/admin/maintenance/backups/summary') {
+        return json({
+          lastSuccessAtUtc: null,
+          lastSuccessFileName: null,
+          lastSuccessSizeBytes: null,
+          lastSuccessSha256: null,
+          artifactCount: 0,
+          totalSizeBytes: 0,
+          scheduleEnabled: false,
+          scheduleIntervalHours: 24,
+          scheduleRetentionCount: 14,
+          lastFailureAtUtc: null,
+        });
+      }
       if (method === 'PUT' && path === '/api/v1/admin/portal-modules/monitoring') {
         return json({ ...moduleItem, isEnabled: false, version: 2, updatedAtUtc: '2026-10-02T00:00:00Z' });
       }
